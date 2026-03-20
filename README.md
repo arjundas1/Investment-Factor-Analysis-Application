@@ -41,4 +41,3 @@ The group for our Database & Information Systems project consists of -
 
 
 ## Conclusion
-

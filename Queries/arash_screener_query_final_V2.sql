@@ -1,7 +1,8 @@
--- Screener Results with Sector Diversification Analysis
--- Description: Takes the top-ranked stocks from the factor-weighted
--- screener and analyzes how diversified the portfolio is. Flags over-concentrated sectors to help
--- users understand portfolio risk before committing.
+-- Stock Screener Query
+-- Description: Computes a composite factor score for each stock
+-- by ranking value, profitability, momentum and size using PERCENT_RANK
+-- normalizes and then combines them using user-defined weights.
+-- Returns the top 25 stocks.
 
 WITH
 
@@ -45,6 +46,7 @@ raw_metrics AS (
         c.market_cap_category,
         c.market_cap,
 
+        -- Value: book-to-market ratio (higher = more value)
         CASE
             WHEN c.market_cap IS NOT NULL
              AND c.market_cap <> 0
@@ -53,6 +55,7 @@ raw_metrics AS (
             ELSE NULL
         END AS value_raw,
 
+        -- Momentum: 12-month return
         CASE
             WHEN p12.adjusted_close_12m_ago IS NOT NULL
              AND p12.adjusted_close_12m_ago <> 0
@@ -61,6 +64,7 @@ raw_metrics AS (
             ELSE NULL
         END AS momentum_raw,
 
+        -- Profitability: return on assets
         CASE
             WHEN lf.total_assets IS NOT NULL
              AND lf.total_assets <> 0
@@ -69,17 +73,20 @@ raw_metrics AS (
             ELSE NULL
         END AS profitability_raw,
 
+        -- Size: raw market cap (inverted in ranking step)
         c.market_cap AS size_raw
 
     FROM companies c
     JOIN latest_fs lf      ON c.ticker = lf.ticker
-    JOIN latest_price lp   ON c.ticker = lp.ticker
-    JOIN price_12m_ago p12 ON c.ticker = p12.ticker
+    JOIN latest_price lp   ON c.ticker = lp.ticker      -- drop companies with no price data
+    JOIN price_12m_ago p12 ON c.ticker = p12.ticker     -- drop companies with no 12m history
     WHERE c.market_cap IS NOT NULL
-      AND c.market_cap_category = :market_cap_category
+      AND c.market_cap_category = :market_cap_category  -- user input: 'Small', 'Mid', or 'Large'. They shouldn't be able to choose Micro, because that's not in the S&P 1500
 ),
 
--- Step 5: Normalize using PERCENT_RANK, size inverted
+-- Step 5: Normalize each factor to 0-1 using PERCENT_RANK
+-- Higher rank = better score for all factors
+-- Size is inverted: smaller market cap = higher score
 ranked AS (
     SELECT
         ticker,
@@ -87,6 +94,10 @@ ranked AS (
         sector,
         market_cap_category,
         market_cap,
+        value_raw,
+        momentum_raw,
+        profitability_raw,
+        size_raw,
         PERCENT_RANK() OVER (ORDER BY value_raw ASC)         AS value_score,
         PERCENT_RANK() OVER (ORDER BY momentum_raw ASC)      AS momentum_score,
         PERCENT_RANK() OVER (ORDER BY profitability_raw ASC) AS profitability_score,
@@ -95,53 +106,29 @@ ranked AS (
     WHERE value_raw IS NOT NULL
       AND momentum_raw IS NOT NULL
       AND profitability_raw IS NOT NULL
-),
-
--- Step 6: Apply user weights and get top 25
-top_stocks AS (
-    SELECT
-        ticker,
-        company_name,
-        sector,
-        market_cap_category,
-        market_cap,
-        ROUND((
-                  (value_score * :weight_value) +
-                  (profitability_score * :weight_profitability) +
-                  (momentum_score * :weight_momentum) +
-                  (size_score * :weight_size)
-                  )::numeric, 4) AS composite_score
-    FROM ranked
-    ORDER BY composite_score DESC
-    LIMIT 25
-),
-
--- Step 7: Sector concentration across the top 25
-sector_counts AS (
-    SELECT
-        sector,
-        COUNT(*)                         AS stocks_in_sector,
-        ROUND(COUNT(*) * 100.0 / 25, 1) AS pct_of_portfolio
-    FROM top_stocks
-    GROUP BY sector
 )
 
--- Final output: each stock with its sector concentration stats
+-- Step 6: Apply user-defined factor weights and return top 25
+-- Weights come from frontend sliders and must sum to 1.0
 SELECT
-    t.ticker,
-    t.company_name,
-    t.sector,
-    t.market_cap_category,
-    ROUND(t.market_cap, 0)                  AS market_cap_millions,
-    ROUND(t.composite_score, 4)             AS composite_score,
-    s.stocks_in_sector,
-    s.pct_of_portfolio,
-    CASE
-        WHEN s.pct_of_portfolio > 30 THEN 'HIGH CONCENTRATION - consider trimming'
-        WHEN s.pct_of_portfolio > 20 THEN 'MODERATE CONCENTRATION'
-        ELSE 'DIVERSIFIED'
-    END                                     AS concentration_flag,
-    ROUND(100.0 / 25, 2)                    AS suggested_weight_pct
-FROM top_stocks t
-JOIN sector_counts s ON t.sector = s.sector
-ORDER BY t.composite_score DESC;
+    ticker,
+    company_name,
+    sector,
+    market_cap_category,
+    ROUND(market_cap::numeric, 0)                                        AS market_cap_millions,
+    ROUND(value_raw::numeric, 4)                                         AS book_to_market,
+    ROUND(profitability_raw::numeric, 4)                                 AS return_on_assets,
+    ROUND((momentum_raw * 100)::numeric, 2)                             AS momentum_12m_pct,
+    ROUND(value_score::numeric, 4)                                       AS value_score,
+    ROUND(profitability_score::numeric, 4)                               AS profitability_score,
+    ROUND(momentum_score::numeric, 4)                                    AS momentum_score,
+    ROUND(size_score::numeric, 4)                                        AS size_score,
+    ROUND((
+        (value_score         * :weight_value)          +   -- e.g. 0.40
+        (profitability_score * :weight_profitability)  +   -- e.g. 0.30
+        (momentum_score      * :weight_momentum)       +   -- e.g. 0.20
+        (size_score          * :weight_size)              -- e.g. 0.10
+    )::numeric, 4)                                                          AS composite_score
+FROM ranked
+ORDER BY composite_score DESC
+LIMIT 25;
