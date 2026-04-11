@@ -11,6 +11,7 @@ import {
 const API_BASE = "http://localhost:8080";
 const ALLOCATION_STORAGE_KEY = "cis5500_allocation";
 const FACTORS_STORAGE_KEY = "cis5500_factors";
+const PORTFOLIO_SETTINGS_STORAGE_KEY = "cis5500_portfolio_settings";
 const PIE_COLORS = [
   "#1b4965",
   "#5fa8d3",
@@ -29,18 +30,27 @@ const PIE_COLORS = [
   "#264653",
 ];
 
+const FACTOR_KEYS = ["value", "profitability", "momentum", "size"];
+
 function Portfolio() {
   const [stocks, setStocks] = useState([]);
   const [selectedByTicker, setSelectedByTicker] = useState({});
   const [topNSelection, setTopNSelection] = useState(15);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [portfolioSettingsLoaded, setPortfolioSettingsLoaded] = useState(false);
 
   const [marketCapCategory, setMarketCapCategory] = useState("Large");
   const [weightValue, setWeightValue] = useState(0.25);
   const [weightProfitability, setWeightProfitability] = useState(0.25);
   const [weightMomentum, setWeightMomentum] = useState(0.25);
   const [weightSize, setWeightSize] = useState(0.25);
+  const [factorInputs, setFactorInputs] = useState({
+    value: "25.0",
+    profitability: "25.0",
+    momentum: "25.0",
+    size: "25.0",
+  });
   const [savedFactorWeights, setSavedFactorWeights] = useState(null);
 
   const [stockAllocationPct, setStockAllocationPct] = useState(70);
@@ -99,9 +109,69 @@ function Portfolio() {
       setWeightProfitability(clamped.profitability);
       setWeightMomentum(clamped.momentum);
       setWeightSize(clamped.size);
+      setFactorInputs({
+        value: (clamped.value * 100).toFixed(1),
+        profitability: (clamped.profitability * 100).toFixed(1),
+        momentum: (clamped.momentum * 100).toFixed(1),
+        size: (clamped.size * 100).toFixed(1),
+      });
       setSavedFactorWeights(clamped);
 
       return clamped;
+    } catch {
+      return null;
+    }
+  };
+
+  const loadPortfolioSettingsFromStorage = () => {
+    try {
+      const raw = sessionStorage.getItem(PORTFOLIO_SETTINGS_STORAGE_KEY);
+      if (!raw) return null;
+
+      const parsed = JSON.parse(raw);
+      const portfolioNormalized = parsed?.normalized_weights;
+      const portfolioMarketCap = parsed?.market_cap_category;
+      const portfolioStockAllocation = Number(parsed?.stock_allocation_pct);
+      const portfolioTopN = Number(parsed?.top_n_selection);
+
+      const nextSettings = {};
+
+      if (portfolioMarketCap === "Large" || portfolioMarketCap === "Mid" || portfolioMarketCap === "Small") {
+        nextSettings.marketCapCategory = portfolioMarketCap;
+      }
+
+      if (!Number.isNaN(portfolioStockAllocation)) {
+        nextSettings.stockAllocationPct = Math.min(100, Math.max(0, portfolioStockAllocation));
+      }
+
+      if (!Number.isNaN(portfolioTopN)) {
+        nextSettings.topNSelection = Math.max(1, Math.floor(portfolioTopN));
+      }
+
+      if (
+        portfolioNormalized &&
+        Number.isFinite(portfolioNormalized.value) &&
+        Number.isFinite(portfolioNormalized.profitability) &&
+        Number.isFinite(portfolioNormalized.momentum) &&
+        Number.isFinite(portfolioNormalized.size)
+      ) {
+        const clamped = {
+          value: Math.min(1, Math.max(0, Number(portfolioNormalized.value))),
+          profitability: Math.min(1, Math.max(0, Number(portfolioNormalized.profitability))),
+          momentum: Math.min(1, Math.max(0, Number(portfolioNormalized.momentum))),
+          size: Math.min(1, Math.max(0, Number(portfolioNormalized.size))),
+        };
+
+        nextSettings.normalizedWeights = clamped;
+        nextSettings.factorInputs = {
+          value: (clamped.value * 100).toFixed(1),
+          profitability: (clamped.profitability * 100).toFixed(1),
+          momentum: (clamped.momentum * 100).toFixed(1),
+          size: (clamped.size * 100).toFixed(1),
+        };
+      }
+
+      return Object.keys(nextSettings).length > 0 ? nextSettings : null;
     } catch {
       return null;
     }
@@ -118,9 +188,10 @@ function Portfolio() {
         momentum: overrides?.momentum ?? weightMomentum,
         size: overrides?.size ?? weightSize,
       };
+      const requestMarketCapCategory = overrides?.marketCapCategory ?? marketCapCategory;
 
       const params = new URLSearchParams({
-        market_cap_category: marketCapCategory,
+        market_cap_category: requestMarketCapCategory,
         weight_value: String(requestWeights.value),
         weight_profitability: String(requestWeights.profitability),
         weight_momentum: String(requestWeights.momentum),
@@ -151,9 +222,73 @@ function Portfolio() {
   useEffect(() => {
     loadAllocationFromStorage();
     const loadedFactors = loadFactorsFromStorage();
-    fetchScreenerStocks(loadedFactors);
+    const loadedPortfolioSettings = loadPortfolioSettingsFromStorage();
+
+    if (loadedPortfolioSettings?.marketCapCategory) {
+      setMarketCapCategory(loadedPortfolioSettings.marketCapCategory);
+    }
+
+    if (loadedPortfolioSettings?.stockAllocationPct !== undefined) {
+      setStockAllocationPct(loadedPortfolioSettings.stockAllocationPct);
+    }
+
+    if (loadedPortfolioSettings?.topNSelection !== undefined) {
+      setTopNSelection(loadedPortfolioSettings.topNSelection);
+    }
+
+    if (loadedPortfolioSettings?.normalizedWeights) {
+      const nextWeights = loadedPortfolioSettings.normalizedWeights;
+      setWeightValue(nextWeights.value);
+      setWeightProfitability(nextWeights.profitability);
+      setWeightMomentum(nextWeights.momentum);
+      setWeightSize(nextWeights.size);
+      setFactorInputs(loadedPortfolioSettings.factorInputs);
+    }
+
+    setPortfolioSettingsLoaded(true);
+
+    const requestOverrides = loadedPortfolioSettings?.normalizedWeights ?? loadedFactors;
+
+    fetchScreenerStocks(
+      requestOverrides
+        ? {
+            ...requestOverrides,
+            marketCapCategory: loadedPortfolioSettings?.marketCapCategory,
+          }
+        : null
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!portfolioSettingsLoaded) return;
+
+    sessionStorage.setItem(
+      PORTFOLIO_SETTINGS_STORAGE_KEY,
+      JSON.stringify({
+        market_cap_category: marketCapCategory,
+        stock_allocation_pct: stockAllocationPct,
+        top_n_selection: topNSelection,
+        factor_inputs: factorInputs,
+        normalized_weights: {
+          value: weightValue,
+          profitability: weightProfitability,
+          momentum: weightMomentum,
+          size: weightSize,
+        },
+      })
+    );
+  }, [
+    portfolioSettingsLoaded,
+    marketCapCategory,
+    stockAllocationPct,
+    topNSelection,
+    factorInputs,
+    weightValue,
+    weightProfitability,
+    weightMomentum,
+    weightSize,
+  ]);
 
   useEffect(() => {
     if (stocks.length > 0) {
@@ -234,12 +369,46 @@ function Portfolio() {
     setStockAllocationPct(Math.min(100, Math.max(0, parsed)));
   };
 
-  const handleFactorPercentChange = (setter, value) => {
+  const handleFactorPercentChange = (changedKey, value) => {
+    setFactorInputs((prev) => ({ ...prev, [changedKey]: value }));
+
     const parsedPercent = Number(value);
     if (Number.isNaN(parsedPercent)) return;
+
     const clampedPercent = Math.min(100, Math.max(0, parsedPercent));
-    setter(clampedPercent / 100);
+    const nextWeight = clampedPercent / 100;
+
+    if (changedKey === "value") setWeightValue(nextWeight);
+    if (changedKey === "profitability") setWeightProfitability(nextWeight);
+    if (changedKey === "momentum") setWeightMomentum(nextWeight);
+    if (changedKey === "size") setWeightSize(nextWeight);
   };
+
+  const factorTotalPct = FACTOR_KEYS.reduce((sum, key) => {
+    const parsed = Number(factorInputs[key]);
+    if (Number.isNaN(parsed)) return sum;
+    return sum + Math.min(100, Math.max(0, parsed));
+  }, 0);
+  const isFactorTotalValid = Math.abs(factorTotalPct - 100) < 0.05;
+  const hasCustomPortfolioFactors = FACTOR_KEYS.some((key) => {
+    const parsed = Number(factorInputs[key]);
+    if (Number.isNaN(parsed)) return false;
+    return Math.abs(parsed - 25) > 0.05;
+  });
+  const factorResetWeights = savedFactorWeights ?? {
+    value: 0.25,
+    profitability: 0.25,
+    momentum: 0.25,
+    size: 0.25,
+  };
+  const allocationResetPct = savedStockAllocationPct ?? 70;
+  const usingFactorResetTarget =
+    Math.abs(weightValue - factorResetWeights.value) < 0.0001 &&
+    Math.abs(weightProfitability - factorResetWeights.profitability) < 0.0001 &&
+    Math.abs(weightMomentum - factorResetWeights.momentum) < 0.0001 &&
+    Math.abs(weightSize - factorResetWeights.size) < 0.0001;
+  const usingAllocationResetTarget =
+    Math.abs(stockAllocationPct - allocationResetPct) < 0.0001;
 
   const usingSavedAllocation =
     savedStockAllocationPct !== null &&
@@ -254,7 +423,7 @@ function Portfolio() {
 
   const allocationStatusMessage = allocationMeta
     ? usingSavedAllocation
-      ? `Recommended allocation for a ${String(
+      ? `Using recommended allocation for ${String(
           allocationMeta.risk_profile || ""
         ).toLowerCase()} strategy with ${allocationMeta.years_to_retirement} years to retirement.`
       : "Using a custom allocation override instead of the recommended allocation."
@@ -272,6 +441,7 @@ function Portfolio() {
           <select
             value={marketCapCategory}
             onChange={(e) => setMarketCapCategory(e.target.value)}
+            disabled={loading}
           >
             <option value="Large">Large</option>
             <option value="Mid">Mid</option>
@@ -299,12 +469,12 @@ function Portfolio() {
               Stocks {stockAllocationPct.toFixed(1)}%
             </span>
           </div>
-          {savedStockAllocationPct !== null && !usingSavedAllocation && (
+          {!usingAllocationResetTarget && (
             <button
               style={{ marginLeft: 8 }}
-              onClick={() => setStockAllocationPct(savedStockAllocationPct)}
+              onClick={() => setStockAllocationPct(allocationResetPct)}
             >
-              Reset to Allocation
+              Reset Allocation
             </button>
           )}
           <div style={{ marginTop: 6, fontSize: 13 }}>
@@ -321,11 +491,12 @@ function Portfolio() {
             <input
               style={{ marginLeft: 8, width: 70 }}
               type="number"
-              step="0.01"
+              step="0.1"
               min="0"
               max="100"
-              value={(weightValue * 100).toFixed(2)}
-              onChange={(e) => handleFactorPercentChange(setWeightValue, e.target.value)}
+              value={factorInputs.value}
+              onChange={(e) => handleFactorPercentChange("value", e.target.value)}
+              disabled={loading}
             />
           </label>
           <label>
@@ -333,11 +504,12 @@ function Portfolio() {
             <input
               style={{ marginLeft: 8, width: 70 }}
               type="number"
-              step="0.01"
+              step="0.1"
               min="0"
               max="100"
-              value={(weightProfitability * 100).toFixed(2)}
-              onChange={(e) => handleFactorPercentChange(setWeightProfitability, e.target.value)}
+              value={factorInputs.profitability}
+              onChange={(e) => handleFactorPercentChange("profitability", e.target.value)}
+              disabled={loading}
             />
           </label>
           <label>
@@ -345,11 +517,12 @@ function Portfolio() {
             <input
               style={{ marginLeft: 8, width: 70 }}
               type="number"
-              step="0.01"
+              step="0.1"
               min="0"
               max="100"
-              value={(weightMomentum * 100).toFixed(2)}
-              onChange={(e) => handleFactorPercentChange(setWeightMomentum, e.target.value)}
+              value={factorInputs.momentum}
+              onChange={(e) => handleFactorPercentChange("momentum", e.target.value)}
+              disabled={loading}
             />
           </label>
           <label>
@@ -357,37 +530,59 @@ function Portfolio() {
             <input
               style={{ marginLeft: 8, width: 70 }}
               type="number"
-              step="0.01"
+              step="0.1"
               min="0"
               max="100"
-              value={(weightSize * 100).toFixed(2)}
-              onChange={(e) => handleFactorPercentChange(setWeightSize, e.target.value)}
+              value={factorInputs.size}
+              onChange={(e) => handleFactorPercentChange("size", e.target.value)}
+              disabled={loading}
             />
           </label>
-          <button onClick={fetchScreenerStocks} disabled={loading}>
-            {loading ? "Loading..." : "Refresh Top 25"}
-          </button>
-          {savedFactorWeights !== null && !usingSavedFactors && (
+          {!usingFactorResetTarget && (
             <button
+              disabled={loading}
               onClick={() => {
-                setWeightValue(savedFactorWeights.value);
-                setWeightProfitability(savedFactorWeights.profitability);
-                setWeightMomentum(savedFactorWeights.momentum);
-                setWeightSize(savedFactorWeights.size);
+                setWeightValue(factorResetWeights.value);
+                setWeightProfitability(factorResetWeights.profitability);
+                setWeightMomentum(factorResetWeights.momentum);
+                setWeightSize(factorResetWeights.size);
+                setFactorInputs({
+                  value: (factorResetWeights.value * 100).toFixed(1),
+                  profitability: (factorResetWeights.profitability * 100).toFixed(1),
+                  momentum: (factorResetWeights.momentum * 100).toFixed(1),
+                  size: (factorResetWeights.size * 100).toFixed(1),
+                });
               }}
             >
-              Reset to Factors
+              Reset Factors
             </button>
           )}
         </div>
         <div style={{ marginTop: 6, marginLeft: 12, fontSize: 13 }}>
+          <span>Total factor weight: {factorTotalPct.toFixed(1)}%</span>
+        </div>
+        {!isFactorTotalValid && (
+          <div style={{ marginTop: 4, marginLeft: 12, fontSize: 13, color: "crimson" }}>
+            Factor weights must add up to 100.0% before refreshing screener results.
+          </div>
+        )}
+        <div style={{ marginTop: 4, marginLeft: 12, fontSize: 13 }}>
           {savedFactorWeights === null ? (
-            <span>No saved factor preferences found yet. Using equal default factor weights.</span>
+            hasCustomPortfolioFactors ? (
+              <span>Using custom factor values.</span>
+            ) : (
+              <span>No saved factor preferences found yet. Using equal default factor weights.</span>
+            )
           ) : usingSavedFactors ? (
             <span>Using factor weights from the Factors screen.</span>
           ) : (
             <span>Using a custom factor override instead of Factors-screen weights.</span>
           )}
+        </div>
+        <div style={{ marginTop: 10, marginLeft: 12 }}>
+          <button onClick={fetchScreenerStocks} disabled={loading || !isFactorTotalValid}>
+            {loading ? "Loading..." : "Refresh Recommendations"}
+          </button>
         </div>
       </div>
 
@@ -410,7 +605,7 @@ function Portfolio() {
                 />
               ))}
             </Pie>
-            <Tooltip formatter={(value) => `${Number(value).toFixed(2)}%`} />
+            <Tooltip formatter={(value) => `${Number(value).toFixed(1)}%`} />
             <Legend />
           </PieChart>
         </ResponsiveContainer>
@@ -483,28 +678,28 @@ function Portfolio() {
               <td>{row.ticker}</td>
               <td>{row.company_name}</td>
               <td>{row.composite_score.toFixed(4)}</td>
-              <td>{row.stock_side_weight_pct.toFixed(2)}</td>
-              <td>{row.final_weight_pct.toFixed(2)}</td>
+              <td>{row.stock_side_weight_pct.toFixed(1)}</td>
+              <td>{row.final_weight_pct.toFixed(1)}</td>
             </tr>
           ))}
           <tr>
             <td colSpan="5" style={{ textAlign: "right", fontWeight: 700 }}>
               Stock Allocation
             </td>
-            <td style={{ fontWeight: 700 }}>{stockAllocationPct.toFixed(2)}</td>
+            <td style={{ fontWeight: 700 }}>{stockAllocationPct.toFixed(1)}</td>
           </tr>
           <tr>
             <td colSpan="5" style={{ textAlign: "right", fontWeight: 700 }}>
               Bond Allocation
             </td>
-            <td style={{ fontWeight: 700 }}>{bondAllocationPct.toFixed(2)}</td>
+            <td style={{ fontWeight: 700 }}>{bondAllocationPct.toFixed(1)}</td>
           </tr>
           <tr>
             <td colSpan="5" style={{ textAlign: "right", fontWeight: 700 }}>
               Total Portfolio
             </td>
             <td style={{ fontWeight: 700 }}>
-              {(bondAllocationPct + weightedStocks.reduce((s, r) => s + r.final_weight_pct, 0)).toFixed(2)}
+              {(bondAllocationPct + weightedStocks.reduce((s, r) => s + r.final_weight_pct, 0)).toFixed(1)}
             </td>
           </tr>
         </tbody>
