@@ -54,6 +54,43 @@ const industries = async function(req, res) {
   });
 }
 
+const asset_allocation = async function(req, res) {
+    const yearsToRetirement = Number.parseInt(req.query.years_to_retirement, 10);
+    const riskProfile = req.query.risk_profile;
+    const allowedRiskProfiles = new Set(['Conservative', 'Moderate', 'Aggressive']);
+
+    if (!Number.isFinite(yearsToRetirement) || yearsToRetirement < 0) {
+      res.status(400).json({ error: 'years_to_retirement must be a non-negative integer' });
+      return;
+    }
+
+    if (!allowedRiskProfiles.has(riskProfile)) {
+      res.status(400).json({ error: 'risk_profile must be Conservative, Moderate, or Aggressive' });
+      return;
+    }
+
+    connection.query(
+      `
+      SELECT years_to_retirement, risk_profile, stock_percentage, bond_percentage
+      FROM asset_allocations
+      WHERE risk_profile = $1
+      ORDER BY ABS(years_to_retirement - $2)
+      LIMIT 1
+      `,
+      [riskProfile, yearsToRetirement],
+      (err, data) => {
+        if (err) {
+          console.log(err);
+          res.status(500).json({ error: 'Failed to fetch asset allocation' });
+        } else if (!data.rows.length) {
+          res.status(404).json({ error: 'No allocation found for the requested inputs' });
+        } else {
+          res.json(data.rows[0]);
+        }
+      }
+    );
+}
+
 const screener_ranked = async function(req, res){
     const weightValue = parseFloat(req.query.weight_value ?? 0.25); 
     const weightProfitability = parseFloat(req.query.weight_profitability ?? 0.25);
@@ -185,5 +222,6 @@ LIMIT 25;
 module.exports = {
   sectors,
   industries,
+  asset_allocation,
   screener_ranked
 }
