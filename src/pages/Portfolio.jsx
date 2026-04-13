@@ -567,7 +567,7 @@ function Portfolio() {
       <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 20 }}>
         <div>
           <label>
-            <strong>Market Cap Bucket:</strong>{" "}
+            <strong>Market Cap Category:</strong>{" "}
           </label>
           <select
             value={marketCapCategory}
@@ -625,7 +625,7 @@ function Portfolio() {
 
       <div style={{ marginBottom: 20 }}>
         <strong>Factors:</strong>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 8, marginLeft: 12 }}>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 8 }}>
           <label>
             Value (%)
             <input
@@ -698,18 +698,18 @@ function Portfolio() {
             </button>
           )}
         </div>
-        <div style={{ marginTop: 6, marginLeft: 12, fontSize: 13 }}>
+        <div style={{ marginTop: 6, fontSize: 13 }}>
           <span>Total factor weight: {factorTotalPct.toFixed(1)}%</span>
         </div>
         {!isFactorTotalValid && (
-          <div style={{ marginTop: 4, marginLeft: 12, fontSize: 13, color: "crimson" }}>
+          <div style={{ marginTop: 4, fontSize: 13, color: "crimson" }}>
             Factor weights must add up to 100.0% before refreshing screener results.
           </div>
         )}
-        <div style={{ marginTop: 4, marginLeft: 12, fontSize: 13 }}>
+        <div style={{ marginTop: 4, fontSize: 13 }}>
           <span>{factorStatusMessage}</span>
         </div>
-        <div style={{ marginTop: 10, marginLeft: 12 }}>
+        <div style={{ marginTop: 22 }}>
           <button onClick={fetchScreenerStocks} disabled={loading || !isFactorTotalValid}>
             {loading ? "Loading..." : "Refresh Recommendations"}
           </button>
