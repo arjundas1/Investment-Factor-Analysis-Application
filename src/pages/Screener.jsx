@@ -30,7 +30,6 @@ function Screener() {
         }
       }
     } catch {
-
     }
 
     try {
@@ -42,7 +41,6 @@ function Screener() {
         }
       }
     } catch {
-
     }
   }, []); 
 
@@ -66,7 +64,16 @@ function Screener() {
 
         sessionStorage.setItem(
           SCREENER_RESULTS_STORAGE_KEY,
-          JSON.stringify(resJson)
+          JSON.stringify({
+            results: resJson,
+            market_cap_category: marketCapCategory,
+            normalized_weights: {
+              value: Number(weights.value),
+              profitability: Number(weights.profitability),
+              momentum: Number(weights.momentum),
+              size: Number(weights.size),
+            },
+          })
         );
         
         // Save the user's current market cap selection 

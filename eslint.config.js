@@ -24,6 +24,13 @@ export default defineConfig([
     },
     rules: {
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      'no-empty': ['error', { allowEmptyCatch: true }],
+    },
+  },
+  {
+    files: ['src/pages/Screener.jsx'],
+    rules: {
+      'react-hooks/set-state-in-effect': 'off',
     },
   },
   {

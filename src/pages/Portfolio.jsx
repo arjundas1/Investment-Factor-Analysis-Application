@@ -12,6 +12,8 @@ const API_BASE = "http://localhost:8080";
 const ALLOCATION_STORAGE_KEY = "cis5500_allocation";
 const FACTORS_STORAGE_KEY = "cis5500_factors";
 const PORTFOLIO_SETTINGS_STORAGE_KEY = "cis5500_portfolio_settings";
+const SCREENER_RESULTS_STORAGE_KEY = "cis5500_screener_results";
+const SCREENER_SETTINGS_STORAGE_KEY = "cis5500_screener_settings";
 const PIE_COLORS = [
   "#1b4965",
   "#5fa8d3",
@@ -31,6 +33,17 @@ const PIE_COLORS = [
 ];
 
 const FACTOR_KEYS = ["value", "profitability", "momentum", "size"];
+const DEFAULT_FACTOR_WEIGHTS = {
+  value: 0.25,
+  profitability: 0.25,
+  momentum: 0.25,
+  size: 0.25,
+};
+
+const weightsMatch = (a, b) => {
+  if (!a || !b) return false;
+  return FACTOR_KEYS.every((key) => Math.abs(Number(a[key]) - Number(b[key])) < 0.000001);
+};
 
 function Portfolio() {
   const [stocks, setStocks] = useState([]);
@@ -56,6 +69,10 @@ function Portfolio() {
   const [stockAllocationPct, setStockAllocationPct] = useState(70);
   const [savedStockAllocationPct, setSavedStockAllocationPct] = useState(null);
   const [allocationMeta, setAllocationMeta] = useState(null);
+  const [appliedMarketCapInfo, setAppliedMarketCapInfo] = useState({
+    source: "default",
+    category: "Large",
+  });
 
   const loadAllocationFromStorage = () => {
     try {
@@ -177,6 +194,73 @@ function Portfolio() {
     }
   };
 
+  const loadScreenerSettingsFromStorage = () => {
+    try {
+      const raw = sessionStorage.getItem(SCREENER_SETTINGS_STORAGE_KEY);
+      if (!raw) return null;
+
+      const parsed = JSON.parse(raw);
+      const savedMarketCap = parsed?.market_cap_category;
+
+      if (savedMarketCap === "Large" || savedMarketCap === "Mid" || savedMarketCap === "Small") {
+        return { marketCapCategory: savedMarketCap };
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  const loadScreenerResultsFromStorage = () => {
+    try {
+      const raw = sessionStorage.getItem(SCREENER_RESULTS_STORAGE_KEY);
+      if (!raw) return null;
+
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        if (parsed.length === 0) return null;
+        return {
+          results: parsed,
+          marketCapCategory: null,
+          normalizedWeights: null,
+          hasMetadata: false,
+        };
+      }
+
+      const parsedResults = parsed?.results;
+      const parsedMarketCap = parsed?.market_cap_category;
+      const parsedWeights = parsed?.normalized_weights;
+
+      const hasValidMarketCap =
+        parsedMarketCap === "Large" || parsedMarketCap === "Mid" || parsedMarketCap === "Small";
+      const hasValidWeights =
+        parsedWeights &&
+        Number.isFinite(parsedWeights.value) &&
+        Number.isFinite(parsedWeights.profitability) &&
+        Number.isFinite(parsedWeights.momentum) &&
+        Number.isFinite(parsedWeights.size);
+
+      if (!Array.isArray(parsedResults) || parsedResults.length === 0) return null;
+
+      return {
+        results: parsedResults,
+        marketCapCategory: hasValidMarketCap ? parsedMarketCap : null,
+        normalizedWeights: hasValidWeights
+          ? {
+              value: Number(parsedWeights.value),
+              profitability: Number(parsedWeights.profitability),
+              momentum: Number(parsedWeights.momentum),
+              size: Number(parsedWeights.size),
+            }
+          : null,
+        hasMetadata: hasValidMarketCap && hasValidWeights,
+      };
+    } catch {
+      return null;
+    }
+  };
+
   const fetchScreenerStocks = async (overrides = null) => {
     setLoading(true);
     setError("");
@@ -205,6 +289,15 @@ function Portfolio() {
 
       const data = await response.json();
       setStocks(data);
+      const latestScreenerSettings = loadScreenerSettingsFromStorage();
+      const appliedSource =
+        latestScreenerSettings?.marketCapCategory === requestMarketCapCategory
+          ? "Screener"
+          : "Portfolio";
+      setAppliedMarketCapInfo({
+        source: appliedSource,
+        category: requestMarketCapCategory,
+      });
 
       const defaultSelection = Object.fromEntries(
         data.map((row) => [row.ticker, true])
@@ -223,9 +316,14 @@ function Portfolio() {
     loadAllocationFromStorage();
     const loadedFactors = loadFactorsFromStorage();
     const loadedPortfolioSettings = loadPortfolioSettingsFromStorage();
+    const loadedScreenerSettings = loadScreenerSettingsFromStorage();
+    const loadedScreenerResults = loadScreenerResultsFromStorage();
 
-    if (loadedPortfolioSettings?.marketCapCategory) {
-      setMarketCapCategory(loadedPortfolioSettings.marketCapCategory);
+    const initialMarketCapCategory =
+      loadedPortfolioSettings?.marketCapCategory ?? loadedScreenerSettings?.marketCapCategory ?? "Large";
+
+    if (initialMarketCapCategory) {
+      setMarketCapCategory(initialMarketCapCategory);
     }
 
     if (loadedPortfolioSettings?.stockAllocationPct !== undefined) {
@@ -246,17 +344,42 @@ function Portfolio() {
     }
 
     setPortfolioSettingsLoaded(true);
+    setAppliedMarketCapInfo({
+      source: loadedPortfolioSettings?.marketCapCategory
+        ? "Portfolio"
+        : loadedScreenerSettings?.marketCapCategory
+          ? "Screener"
+          : "default",
+      category: initialMarketCapCategory,
+    });
 
-    const requestOverrides = loadedPortfolioSettings?.normalizedWeights ?? loadedFactors;
+    const requestOverrides = loadedPortfolioSettings?.normalizedWeights ?? loadedFactors ?? DEFAULT_FACTOR_WEIGHTS;
 
-    fetchScreenerStocks(
-      requestOverrides
-        ? {
-            ...requestOverrides,
-            marketCapCategory: loadedPortfolioSettings?.marketCapCategory,
-          }
-        : null
+    const shouldUseSavedScreenerResults = Boolean(
+      loadedScreenerResults && (
+        loadedScreenerResults.hasMetadata
+          ? loadedScreenerResults.marketCapCategory === initialMarketCapCategory &&
+            weightsMatch(loadedScreenerResults.normalizedWeights, requestOverrides)
+          : !loadedPortfolioSettings?.normalizedWeights &&
+            !loadedPortfolioSettings?.marketCapCategory &&
+            !loadedFactors
+      )
     );
+
+    if (shouldUseSavedScreenerResults && loadedScreenerResults) {
+      setStocks(loadedScreenerResults.results);
+      const defaultSelection = Object.fromEntries(
+        loadedScreenerResults.results.map((row) => [row.ticker, true])
+      );
+      setSelectedByTicker(defaultSelection);
+    } else {
+      fetchScreenerStocks(
+        {
+          ...requestOverrides,
+          marketCapCategory: initialMarketCapCategory,
+        }
+      );
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -389,7 +512,9 @@ function Portfolio() {
     if (Number.isNaN(parsed)) return sum;
     return sum + Math.min(100, Math.max(0, parsed));
   }, 0);
-  const isFactorTotalValid = Math.abs(factorTotalPct - 100) < 0.05;
+  const normalizedFactorTotalPct =
+    (weightValue + weightProfitability + weightMomentum + weightSize) * 100;
+  const isFactorTotalValid = Math.abs(normalizedFactorTotalPct - 100) < 0.05;
   const hasCustomPortfolioFactors = FACTOR_KEYS.some((key) => {
     const parsed = Number(factorInputs[key]);
     if (Number.isNaN(parsed)) return false;
@@ -423,11 +548,17 @@ function Portfolio() {
 
   const allocationStatusMessage = allocationMeta
     ? usingSavedAllocation
-      ? `Using recommended allocation for ${String(
-          allocationMeta.risk_profile || ""
-        ).toLowerCase()} strategy with ${allocationMeta.years_to_retirement} years to retirement.`
-      : "Using a custom allocation override instead of the recommended allocation."
-    : "No saved Allocation found yet. Using default 70/30 until you calculate on the Allocation screen.";
+      ? "Using saved allocation from Allocation screen."
+      : "Using custom allocation override in Portfolio screen."
+    : "Using default 70/30 allocation.";
+
+  const factorStatusMessage = savedFactorWeights === null
+    ? hasCustomPortfolioFactors
+      ? "Using custom factor override in Portfolio screen."
+      : "Using default equal factor weights."
+    : usingSavedFactors
+      ? "Using saved factor weights from Factors screen."
+      : "Using custom factor override in Portfolio screen.";
 
   return (
     <div>
@@ -447,6 +578,15 @@ function Portfolio() {
             <option value="Mid">Mid</option>
             <option value="Small">Small</option>
           </select>
+          <div style={{ marginTop: 6, fontSize: 13 }}>
+            <span>
+              {appliedMarketCapInfo.source === "default"
+                ? "Using default market cap."
+                : appliedMarketCapInfo.source === "Screener"
+                  ? "Using saved market cap from Screener screen."
+                  : "Using custom market cap override in Portfolio screen."}
+            </span>
+          </div>
         </div>
 
         <div>
@@ -477,7 +617,7 @@ function Portfolio() {
               Reset Allocation
             </button>
           )}
-          <div style={{ marginTop: 6, fontSize: 13 }}>
+          <div style={{ marginTop: 4, fontSize: 13 }}>
             <span>{allocationStatusMessage}</span>
           </div>
         </div>
@@ -567,17 +707,7 @@ function Portfolio() {
           </div>
         )}
         <div style={{ marginTop: 4, marginLeft: 12, fontSize: 13 }}>
-          {savedFactorWeights === null ? (
-            hasCustomPortfolioFactors ? (
-              <span>Using custom factor values.</span>
-            ) : (
-              <span>No saved factor preferences found yet. Using equal default factor weights.</span>
-            )
-          ) : usingSavedFactors ? (
-            <span>Using factor weights from the Factors screen.</span>
-          ) : (
-            <span>Using a custom factor override instead of Factors-screen weights.</span>
-          )}
+          <span>{factorStatusMessage}</span>
         </div>
         <div style={{ marginTop: 10, marginLeft: 12 }}>
           <button onClick={fetchScreenerStocks} disabled={loading || !isFactorTotalValid}>
