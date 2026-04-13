@@ -1,6 +1,79 @@
 import { useMemo, useState } from "react";
 
 const FACTORS_STORAGE_KEY = "cis5500_factors";
+const FACTOR_ORDER = ["Value", "Momentum", "Profitability", "Size"];
+
+const normalizeWeightsToOneDecimal = (rawWeights) => {
+  const totalWeight = FACTOR_ORDER.reduce(
+    (sum, factor) => sum + Number(rawWeights[factor] ?? 0),
+    0
+  );
+
+  if (totalWeight <= 0) {
+    return {
+      percentageByFactor: {
+        Value: 25.0,
+        Momentum: 25.0,
+        Profitability: 25.0,
+        Size: 25.0,
+      },
+      normalizedWeights: {
+        value: 0.25,
+        momentum: 0.25,
+        profitability: 0.25,
+        size: 0.25,
+      },
+    };
+  }
+
+  const percentageByFactor = {
+    Value: 0,
+    Momentum: 0,
+    Profitability: 0,
+    Size: 0,
+  };
+
+  const firstThree = FACTOR_ORDER.slice(0, 3);
+  const lastFactor = FACTOR_ORDER[3];
+
+  firstThree.forEach((factor) => {
+    const rawPct = (Number(rawWeights[factor]) / totalWeight) * 100;
+    percentageByFactor[factor] = Number(rawPct.toFixed(1));
+  });
+
+  const sumFirstThree = firstThree.reduce(
+    (sum, factor) => sum + percentageByFactor[factor],
+    0
+  );
+
+  let lastFactorPct = Number((100 - sumFirstThree).toFixed(1));
+
+  if (lastFactorPct < 0 || lastFactorPct > 100) {
+    const clampedLastFactorPct = Math.min(100, Math.max(0, lastFactorPct));
+    const adjustment = Number((lastFactorPct - clampedLastFactorPct).toFixed(1));
+    const largestFirstThreeFactor = firstThree.reduce((largest, factor) =>
+      percentageByFactor[factor] > percentageByFactor[largest] ? factor : largest
+    , firstThree[0]);
+
+    percentageByFactor[largestFirstThreeFactor] = Number(
+      (percentageByFactor[largestFirstThreeFactor] + adjustment).toFixed(1)
+    );
+
+    lastFactorPct = clampedLastFactorPct;
+  }
+
+  percentageByFactor[lastFactor] = lastFactorPct;
+
+  return {
+    percentageByFactor,
+    normalizedWeights: {
+      value: Number((percentageByFactor.Value / 100).toFixed(4)),
+      momentum: Number((percentageByFactor.Momentum / 100).toFixed(4)),
+      profitability: Number((percentageByFactor.Profitability / 100).toFixed(4)),
+      size: Number((percentageByFactor.Size / 100).toFixed(4)),
+    },
+  };
+};
 
 const readSavedFactors = () => {
   try {
@@ -71,29 +144,7 @@ function Factors() {
 
     setWeights(nextWeights);
 
-    const nextTotalWeight = Object.values(nextWeights).reduce(
-      (sum, w) => sum + w,
-      0
-    );
-
-    const normalized = {
-      value:
-        nextTotalWeight > 0
-          ? Number((nextWeights.Value / nextTotalWeight).toFixed(4))
-          : 0,
-      profitability:
-        nextTotalWeight > 0
-          ? Number((nextWeights.Profitability / nextTotalWeight).toFixed(4))
-          : 0,
-      momentum:
-        nextTotalWeight > 0
-          ? Number((nextWeights.Momentum / nextTotalWeight).toFixed(4))
-          : 0,
-      size:
-        nextTotalWeight > 0
-          ? Number((nextWeights.Size / nextTotalWeight).toFixed(4))
-          : 0,
-    };
+    const normalized = normalizeWeightsToOneDecimal(nextWeights).normalizedWeights;
 
     sessionStorage.setItem(
       FACTORS_STORAGE_KEY,
@@ -104,22 +155,14 @@ function Factors() {
     );
   };
 
-  const totalWeight = Object.values(weights).reduce(
-    (sum, w) => sum + w,
-    0
-  );
+  const normalizedWeights = useMemo(() => {
+    const percentageByFactor = normalizeWeightsToOneDecimal(weights).percentageByFactor;
 
-  const normalizedWeights = useMemo(
-    () =>
-      Object.entries(weights).map(([factor, value]) => ({
-        factor,
-        weight:
-          totalWeight > 0
-            ? ((value / totalWeight) * 100).toFixed(1)
-            : 0,
-      })),
-    [weights, totalWeight]
-  );
+    return FACTOR_ORDER.map((factor) => ({
+      factor,
+      weight: percentageByFactor[factor].toFixed(1),
+    }));
+  }, [weights]);
 
   return (
     <div>
