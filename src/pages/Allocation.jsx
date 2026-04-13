@@ -118,7 +118,6 @@ function Allocation() {
         bonds: Number(allocation.bond_percentage).toFixed(1),
         current_age: currentAge,
         years_to_retirement: yearsToRetirement,
-        matched_years_to_retirement: allocation.years_to_retirement,
       };
 
       setResult(calculated);
@@ -130,7 +129,6 @@ function Allocation() {
           current_age: currentAge,
           retirement_age: parsedRetirementAge,
           years_to_retirement: yearsToRetirement,
-          matched_years_to_retirement: allocation.years_to_retirement,
           risk_profile: risk,
           stock_percentage: Number(calculated.stocks),
           bond_percentage: Number(calculated.bonds),
@@ -194,7 +192,6 @@ function Allocation() {
           <h3>Recommended Allocation</h3>
           <p>Current Age: {result.current_age}</p>
           <p>Years to Retirement: {result.years_to_retirement}</p>
-          <p>Matched Allocation Year: {result.matched_years_to_retirement}</p>
           <p>Stocks: {result.stocks}%</p>
           <p>Bonds: {result.bonds}%</p>
           <p>Saved for Portfolio screen.</p>
