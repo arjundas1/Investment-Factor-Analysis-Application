@@ -32,6 +32,21 @@ const sectors = async function(req, res) {
   });
 }
 
+const tickers = async function(req, res) {
+    connection.query(`
+    SELECT ticker, company_name
+    FROM companies
+    WHERE ticker IS NOT NULL
+    ORDER BY ticker ASC`, (err, data) => {
+    if (err) {
+      console.log(err);
+      res.json([]);
+    } else {
+      res.json(data.rows);
+    }
+  });
+}
+
 const industries = async function(req, res) {
     const sector = req.query.sector;
     const params = [];
@@ -626,7 +641,7 @@ const web_search = async function(req, res) {
             role: 'user',
             parts: [
               {
-                text: `Find recent finance news related to: ${query}. Write one combined summary in plain text (no markdown), maximum 3 sentences, synthesizing multiple sources.`,
+                text: `Provide a very brief description of what the company ${query} does. Summarize recent financial news related to ${query}. If analyst sentiment or a clear consensus is available, state whether the stock is generally viewed as a Buy, Hold, or Sell; otherwise say that no clear consensus was found. Keep the answer to a maximum of 4 sentences and synthesize multiple sources.`,
               },
             ],
           },
@@ -702,6 +717,7 @@ const web_search = async function(req, res) {
 
 module.exports = {
   sectors,
+  tickers,
   industries,
   asset_allocation,
   screener_ranked,
