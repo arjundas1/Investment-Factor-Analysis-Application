@@ -5,6 +5,7 @@ const API_BASE = "http://localhost:8080";
 
 function Navbar() {
   const [query, setQuery] = useState("");
+  const [validTickers, setValidTickers] = useState(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [summary, setSummary] = useState("");
@@ -23,12 +24,48 @@ function Navbar() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  useEffect(() => {
+    const loadTickers = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/tickers`);
+        if (!response.ok) return;
+
+        const data = await response.json();
+        if (!Array.isArray(data)) return;
+
+        const tickerSet = new Set(
+          data
+            .map((row) => String(row.ticker || "").trim().toUpperCase())
+            .filter(Boolean)
+        );
+        setValidTickers(tickerSet);
+      } catch {
+        // If the ticker lookup fails, keep the input disabled from autocomplete only.
+      }
+    };
+
+    loadTickers();
+  }, []);
+
   const runSearch = async (event) => {
     event.preventDefault();
 
     const trimmedQuery = query.trim();
     if (!trimmedQuery) {
-      setError("Enter a company name or ticker first.");
+      setError("Enter a ticker first.");
+      setPopupOpen(true);
+      return;
+    }
+
+    const normalizedTicker = trimmedQuery.toUpperCase();
+    if (!validTickers.has(normalizedTicker)) {
+      const suggestions = Array.from(validTickers)
+        .filter((ticker) => ticker.startsWith(normalizedTicker) || normalizedTicker.startsWith(ticker))
+        .slice(0, 5);
+      const suggestionMessage = suggestions.length > 0
+        ? ` Did you mean: ${suggestions.join(", ")}?`
+        : "";
+      setError(`That ticker is not in the companies database.${suggestionMessage}`);
       setPopupOpen(true);
       return;
     }
@@ -38,10 +75,10 @@ function Navbar() {
     setError("");
     setSummary("");
     setResults([]);
-    setLabel(trimmedQuery);
+    setLabel(normalizedTicker);
 
     try {
-      const response = await fetch(`${API_BASE}/search/web?q=${encodeURIComponent(trimmedQuery)}`);
+      const response = await fetch(`${API_BASE}/search/web?q=${encodeURIComponent(normalizedTicker)}`);
       const data = await response.json();
 
       if (!response.ok) {
@@ -82,9 +119,10 @@ function Navbar() {
         <input
           type="text"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search Gemini..."
-          aria-label="Search Gemini"
+          onChange={(e) => setQuery(e.target.value.toUpperCase())}
+          placeholder="Enter ticker (e.g. AAPL)"
+          aria-label="Search ticker"
+          list="ticker-options"
           style={{
             width: 240,
             maxWidth: "42vw",
@@ -106,6 +144,11 @@ function Navbar() {
         >
           Search
         </button>
+        <datalist id="ticker-options">
+          {Array.from(validTickers).slice(0, 500).map((ticker) => (
+            <option key={ticker} value={ticker} />
+          ))}
+        </datalist>
       </form>
 
       {popupOpen && (

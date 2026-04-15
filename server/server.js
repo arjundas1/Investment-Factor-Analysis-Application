@@ -6,6 +6,7 @@ const app = express();
 
 app.use(cors({ origin: '*'}));
 app.get('/sectors', routes.sectors);
+app.get('/tickers', routes.tickers);
 app.get('/industries', routes.industries);
 app.get('/asset-allocation', routes.asset_allocation);
 app.get('/allocation', routes.asset_allocation);

@@ -32,6 +32,21 @@ const sectors = async function(req, res) {
   });
 }
 
+const tickers = async function(req, res) {
+    connection.query(`
+    SELECT ticker, company_name
+    FROM companies
+    WHERE ticker IS NOT NULL
+    ORDER BY ticker ASC`, (err, data) => {
+    if (err) {
+      console.log(err);
+      res.json([]);
+    } else {
+      res.json(data.rows);
+    }
+  });
+}
+
 const industries = async function(req, res) {
     const sector = req.query.sector;
     const params = [];
@@ -702,6 +717,7 @@ const web_search = async function(req, res) {
 
 module.exports = {
   sectors,
+  tickers,
   industries,
   asset_allocation,
   screener_ranked,
