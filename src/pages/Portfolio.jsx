@@ -952,19 +952,19 @@ function Portfolio() {
             </tr>
           ))}
           <tr>
-            <td colSpan="5" style={{ textAlign: "right", fontWeight: 700 }}>
+            <td colSpan="6" style={{ textAlign: "right", fontWeight: 700 }}>
               Stock Allocation
             </td>
             <td style={{ fontWeight: 700 }}>{stockAllocationPct.toFixed(1)}</td>
           </tr>
           <tr>
-            <td colSpan="5" style={{ textAlign: "right", fontWeight: 700 }}>
+            <td colSpan="6" style={{ textAlign: "right", fontWeight: 700 }}>
               Bond Allocation
             </td>
             <td style={{ fontWeight: 700 }}>{bondAllocationPct.toFixed(1)}</td>
           </tr>
           <tr>
-            <td colSpan="5" style={{ textAlign: "right", fontWeight: 700 }}>
+            <td colSpan="6" style={{ textAlign: "right", fontWeight: 700 }}>
               Total Portfolio
             </td>
             <td style={{ fontWeight: 700 }}>
