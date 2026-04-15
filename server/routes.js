@@ -626,7 +626,7 @@ const web_search = async function(req, res) {
             role: 'user',
             parts: [
               {
-                text: `Find recent finance news related to: ${query}. Write one combined summary in plain text (no markdown), maximum 3 sentences, synthesizing multiple sources.`,
+                text: `Provide a very brief description of what the company ${query} does. Write about recent financial news related to ${query}. State the general consensus as to whether this stock is a Buy, Hold, or Sell. Maximum of 4 sentences, synthesizing multiple sources.`,
               },
             ],
           },
