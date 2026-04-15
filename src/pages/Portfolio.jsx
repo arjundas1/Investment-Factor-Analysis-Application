@@ -73,6 +73,13 @@ function Portfolio() {
     source: "default",
     category: "Large",
   });
+  const [webQuery, setWebQuery] = useState("");
+  const [webLabel, setWebLabel] = useState("");
+  const [webSummary, setWebSummary] = useState("");
+  const [webResults, setWebResults] = useState([]);
+  const [webLoading, setWebLoading] = useState(false);
+  const [webError, setWebError] = useState("");
+  const [webPopupOpen, setWebPopupOpen] = useState(false);
 
   const loadAllocationFromStorage = () => {
     try {
@@ -486,6 +493,52 @@ function Portfolio() {
     setSelectedByTicker(nextSelection);
   };
 
+  const searchCompanyOnWeb = async (companyName, ticker) => {
+    const query = `${companyName} ${ticker} stock`;
+    const label = `${companyName} (${String(ticker).toUpperCase()})`;
+    setWebPopupOpen(true);
+    setWebLabel(label);
+    setWebQuery(query);
+    setWebSummary("");
+    setWebLoading(true);
+    setWebError("");
+
+    try {
+      const params = new URLSearchParams({ q: query });
+      const response = await fetch(`${API_BASE}/search/web?${params.toString()}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        const detailsText = typeof data?.details === "string" ? data.details : "";
+        let providerMessage = "";
+
+        if (detailsText) {
+          try {
+            const parsed = JSON.parse(detailsText);
+            providerMessage = parsed?.error?.message || detailsText;
+          } catch {
+            providerMessage = detailsText;
+          }
+        }
+
+        throw new Error(
+          providerMessage
+            ? `${data?.error || `Web search failed: ${response.status}`} ${providerMessage}`
+            : data?.error || `Web search failed: ${response.status}`
+        );
+      }
+
+      setWebSummary(typeof data?.summary === "string" ? data.summary : "");
+      setWebResults(Array.isArray(data.results) ? data.results : []);
+    } catch (err) {
+      setWebSummary("");
+      setWebResults([]);
+      setWebError(err.message || "Failed to fetch web search results");
+    } finally {
+      setWebLoading(false);
+    }
+  };
+
   const handleStockAllocationChange = (value) => {
     const parsed = Number(value);
     if (Number.isNaN(parsed)) return;
@@ -718,6 +771,64 @@ function Portfolio() {
 
       {error && <p style={{ color: "crimson" }}>{error}</p>}
 
+      {webPopupOpen && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0, 0, 0, 0.4)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+            zIndex: 2000,
+          }}
+        >
+          <div
+            style={{
+              width: "min(900px, 95vw)",
+              maxHeight: "85vh",
+              overflowY: "auto",
+              backgroundColor: "#fff",
+              borderRadius: 10,
+              border: "1px solid #ddd",
+              padding: 16,
+              boxShadow: "0 8px 30px rgba(0,0,0,0.2)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <strong>{webLabel || "Web Results"}</strong>
+              <button onClick={() => setWebPopupOpen(false)}>Close</button>
+            </div>
+            {webLoading && <p style={{ marginTop: 8 }}>Searching web...</p>}
+            {webError && <p style={{ marginTop: 8, color: "crimson" }}>{webError}</p>}
+            {!webLoading && !webError && webSummary && (
+              <p style={{ marginTop: 8, marginBottom: 10, lineHeight: 1.45 }}>
+                {webSummary}
+              </p>
+            )}
+            {!webLoading && !webError && webQuery && webResults.length === 0 && (
+              <p style={{ marginTop: 8 }}>No results found.</p>
+            )}
+            {!webLoading && !webError && webResults.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <div style={{ fontSize: 13, marginBottom: 0 }}>
+                  <strong>Sources:</strong>{" "}
+                  {webResults.map((row, index) => (
+                    <span key={row.url}>
+                      <a href={row.url} target="_blank" rel="noreferrer">
+                        {row.name}
+                      </a>
+                      {index < webResults.length - 1 ? ", " : ""}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div style={{ width: "100%", height: 460, marginBottom: 24 }}>
         <ResponsiveContainer>
           <PieChart>
@@ -784,18 +895,31 @@ function Portfolio() {
               onChange={() => toggleTicker(row.ticker)}
             />
             <span style={{ minWidth: 56, fontWeight: 700 }}>{row.ticker}</span>
-            <span>{row.company_name}</span>
+            <button
+              onClick={() => searchCompanyOnWeb(row.company_name, row.ticker)}
+              style={{
+                background: "none",
+                border: "none",
+                color: "#0a66c2",
+                textDecoration: "underline",
+                cursor: "pointer",
+                padding: 0,
+              }}
+            >
+              {row.company_name}
+            </button>
           </label>
         ))}
       </div>
 
-      <h3 style={{ marginTop: 20 }}>Final Weights</h3>
+      <h3 style={{ marginTop: 20 }}>Final Portfolio</h3>
       <table border="1" cellPadding="8" style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr>
             <th>Rank</th>
             <th>Ticker</th>
             <th>Company</th>
+            <th>Sector</th>
             <th>Composite Score</th>
             <th>Stock-Side Weight (%)</th>
             <th>Portfolio Weight (%)</th>
@@ -806,7 +930,22 @@ function Portfolio() {
             <tr key={row.id}>
               <td>{row.rank}</td>
               <td>{row.ticker}</td>
-              <td>{row.company_name}</td>
+              <td>
+                <button
+                  onClick={() => searchCompanyOnWeb(row.company_name, row.ticker)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "#0a66c2",
+                    textDecoration: "underline",
+                    cursor: "pointer",
+                    padding: 0,
+                  }}
+                >
+                  {row.company_name}
+                </button>
+              </td>
+              <td>{row.sector}</td>
               <td>{row.composite_score.toFixed(4)}</td>
               <td>{row.stock_side_weight_pct.toFixed(1)}</td>
               <td>{row.final_weight_pct.toFixed(1)}</td>

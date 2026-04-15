@@ -16,6 +16,7 @@ app.get('/allocation/risk_comparison', routes.allocation_risk_comparison);
 app.get('/screener/diversification',   routes.screener_diversification);
 app.get('/factors/performance', routes.factor_performance);
 app.get('/factors/comparison', routes.factors_comparison);
+app.get('/search/web',                 routes.web_search);
 
 app.listen(config.server_port, () => {
   console.log(`Server running at http://${config.server_host}:${config.server_port}/`);

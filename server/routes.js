@@ -601,6 +601,105 @@ const factors_comparison = async function (req, res) {
 };
 
 
+const web_search = async function(req, res) {
+    const query = String(req.query.q ?? '').trim();
+    if (!query) {
+      return res.status(400).json({ error: 'Missing query parameter q' });
+    }
+
+    const geminiApiKey = process.env.GEMINI_API_KEY || config.gemini_api_key;
+    const geminiModel = process.env.GEMINI_MODEL || config.gemini_model || 'gemini-2.5-flash';
+
+    if (!geminiApiKey) {
+      return res.status(500).json({
+        error: 'Search is not configured. Set GEMINI_API_KEY in environment or set gemini_api_key in server/config.json.',
+      });
+    }
+
+    try {
+      const toSingleLine = (value) => String(value || '').replace(/\s+/g, ' ').trim();
+
+      const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(geminiModel)}:generateContent`;
+      const geminiPayload = {
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: `Find recent finance news related to: ${query}. Write one combined summary in plain text (no markdown), maximum 3 sentences, synthesizing multiple sources.`,
+              },
+            ],
+          },
+        ],
+        tools: [{ google_search: {} }],
+        generationConfig: {
+          temperature: 0.2,
+        },
+      };
+
+      const geminiResponse = await fetch(`${geminiEndpoint}?key=${encodeURIComponent(geminiApiKey)}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(geminiPayload),
+      });
+
+      if (!geminiResponse.ok) {
+        const errorText = await geminiResponse.text();
+        return res.status(502).json({
+          error: `Gemini grounded search request failed (${geminiResponse.status}).`,
+          details: errorText,
+        });
+      }
+
+      const geminiData = await geminiResponse.json();
+      const candidate = geminiData?.candidates?.[0] || null;
+      const fullText = (candidate?.content?.parts || [])
+        .map((part) => part?.text)
+        .filter(Boolean)
+        .join('\n')
+        .trim();
+
+      const chunks = candidate?.groundingMetadata?.groundingChunks || [];
+      const uniqueResults = [];
+      const seenUrls = new Set();
+
+      for (const chunk of chunks) {
+        const url = chunk?.web?.uri;
+        const title = chunk?.web?.title;
+        if (!url || seenUrls.has(url)) continue;
+        seenUrls.add(url);
+
+        let sourceLabel = title || url;
+        try {
+          const host = new URL(url).hostname;
+          sourceLabel = title || host;
+        } catch {
+          // Keep existing label if URL parsing fails.
+        }
+
+        uniqueResults.push({
+          name: sourceLabel,
+          url,
+        });
+        if (uniqueResults.length >= 5) break;
+      }
+
+      return res.json({
+        query,
+        provider: 'gemini-grounded-search',
+        summary: toSingleLine(fullText) || null,
+        results: uniqueResults,
+      });
+    } catch (err) {
+      console.log(err);
+      return res.status(500).json({
+        error: err.message || 'Failed to fetch web search results',
+      });
+    }
+}
+
 module.exports = {
   sectors,
   industries,
@@ -612,4 +711,5 @@ module.exports = {
   screener_diversification,
   factor_performance,
   factors_comparison,
+  web_search,
 }
