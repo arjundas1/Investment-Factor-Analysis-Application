@@ -9,6 +9,10 @@ app.get('/sectors', routes.sectors);
 app.get('/industries', routes.industries);
 app.get('/asset-allocation', routes.asset_allocation);
 app.get('/screener/ranked', routes.screener_ranked);
+app.get('/allocation/enriched',        routes.allocation_enriched);
+app.get('/allocation/glide_path',      routes.allocation_glide_path);
+app.get('/allocation/risk_comparison', routes.allocation_risk_comparison);
+app.get('/screener/diversification',   routes.screener_diversification);
 
 app.listen(config.server_port, () => {
   console.log(`Server running at http://${config.server_host}:${config.server_port}/`);
