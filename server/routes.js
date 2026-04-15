@@ -626,7 +626,7 @@ const web_search = async function(req, res) {
             role: 'user',
             parts: [
               {
-                text: `Provide a very brief description of what the company ${query} does. Write about recent financial news related to ${query}. State the general consensus as to whether this stock is a Buy, Hold, or Sell. Maximum of 4 sentences, synthesizing multiple sources.`,
+                text: `Provide a very brief description of what the company ${query} does. Summarize recent financial news related to ${query}. If analyst sentiment or a clear consensus is available, state whether the stock is generally viewed as a Buy, Hold, or Sell; otherwise say that no clear consensus was found. Keep the answer to a maximum of 4 sentences and synthesize multiple sources.`,
               },
             ],
           },
