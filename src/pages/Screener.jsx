@@ -16,6 +16,7 @@ function Screener() {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [sectorNameByCode, setSectorNameByCode] = useState({});
 
   useEffect(() => {
 
@@ -43,6 +44,29 @@ function Screener() {
     } catch {
     }
   }, []); 
+
+  useEffect(() => {
+    const fetchSectorLookup = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/sectors`);
+        if (!response.ok) return;
+
+        const data = await response.json();
+        if (!Array.isArray(data)) return;
+
+        const map = Object.fromEntries(
+          data
+            .filter((row) => row?.gsector !== undefined && row?.sector_name)
+            .map((row) => [String(row.gsector), row.sector_name])
+        );
+        setSectorNameByCode(map);
+      } catch {
+        // Keep showing raw sector codes if lookup is unavailable.
+      }
+    };
+
+    fetchSectorLookup();
+  }, []);
 
   const runScreener = () => {
 
@@ -172,7 +196,7 @@ function Screener() {
                 <td>{idx + 1}</td>
                 <td><strong>{stock.ticker}</strong></td>
                 <td>{stock.company_name}</td>
-                <td>{stock.sector}</td>
+                <td>{sectorNameByCode[String(stock.sector)] || stock.sector}</td>
                 <td>{Number(stock.market_cap_millions).toLocaleString()}</td>
                 <td>{Number(stock.value_score).toFixed(4)}</td>
                 <td>{Number(stock.profitability_score).toFixed(4)}</td>
