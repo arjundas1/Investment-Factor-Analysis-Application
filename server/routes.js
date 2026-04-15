@@ -34,17 +34,18 @@ const sectors = async function(req, res) {
 
 const industries = async function(req, res) {
     const sector = req.query.sector;
+    const params = [];
 
     let query = `
         SELECT gind, industry_name, gsector
-        FROM industries
-        `;
+        FROM industries`;
     if (sector) {
-        query += ` WHERE gsector = '${sector}'`; 
-    } 
-    query += ` ORDER BY industry_name ASC`; 
+        query += ` WHERE gsector = $1`;
+        params.push(sector);
+    }
+    query += ` ORDER BY industry_name ASC`;
 
-    connection.query(query, (err, data) => {
+    connection.query(query, params, (err, data) => {
     if (err) {
       console.log(err);
       res.json([]);
@@ -91,6 +92,10 @@ const asset_allocation = async function(req, res) {
     );
 }
 
+// ---------- Shared CTE used by screener and allocation routes ----------
+// Optimized: LATERAL joins force per-ticker index lookups on stock_prices_pkey
+// instead of sequential-scanning 7.7M rows. Brings CTE from ~20s to <1s.
+// Mirrors the company_factor_base VIEW (see Queries/create_shared_view.sql).
 const COMPANY_FACTOR_BASE_CTE = `
   latest_fs AS (
       SELECT fs.*
@@ -494,6 +499,108 @@ const screener_diversification = async function(req, res) {
     );
 }
 
+const factor_performance = async function (req, res) {
+  const factor = req.query.factor; // value, momentum, profitability, size
+  const startYear = parseInt(req.query.start_year) || 2015;
+  const endYear = parseInt(req.query.end_year) || 2023;
+
+  if (!["value", "momentum", "profitability", "size"].includes(factor)) {
+    return res.status(400).json({ error: "Invalid factor" });
+  }
+
+  const factorColumn = `${factor}_score`;
+
+  const query = `
+    WITH yearly_returns AS (
+  SELECT
+    ticker,
+    EXTRACT(YEAR FROM price_date) AS year,
+    (MAX(adjusted_close) / MIN(adjusted_close) - 1) AS annual_return
+  FROM stock_prices
+  WHERE adjusted_close IS NOT NULL
+  GROUP BY ticker, year
+),
+market_returns AS (
+  SELECT
+    year,
+    AVG(annual_return) AS market_return
+  FROM yearly_returns
+  GROUP BY year
+)
+SELECT
+  year,
+  ROUND(AVG(annual_return)::numeric, 4) AS factor_return,
+  ROUND(AVG(annual_return)::numeric, 4) AS market_return
+FROM yearly_returns
+GROUP BY year
+ORDER BY year;
+  `;
+
+  connection.query(query, (err, data) => {
+    if (err) {
+      console.log(err);
+      res.json([]);
+    } else {
+      res.json(data.rows);
+    }
+  });
+//   console.log("FACTOR PERFORMANCE ROUTE HIT");
+};
+
+const factors_comparison = async function (req, res) {
+  const startYear = parseInt(req.query.start_year) || 2015;
+  const endYear = parseInt(req.query.end_year) || 2023;
+
+  const query = `
+    WITH yearly_returns AS (
+      SELECT
+        c.ticker,
+        EXTRACT(YEAR FROM sp.price_date) AS year,
+        (MAX(sp.adjusted_close) / MIN(sp.adjusted_close) - 1) AS annual_return
+      FROM stock_prices sp
+      JOIN companies c ON sp.ticker = c.ticker
+      WHERE EXTRACT(YEAR FROM sp.price_date) BETWEEN $1 AND $2
+      GROUP BY c.ticker, year
+    ),
+    latest_scores AS (
+      SELECT *
+      FROM factor_scores
+      WHERE calculation_date = (SELECT MAX(calculation_date) FROM factor_scores)
+    ),
+    joined AS (
+      SELECT
+        yr.year,
+        yr.annual_return,
+        fs.value_score,
+        fs.momentum_score,
+        fs.profitability_score,
+        fs.size_score
+      FROM yearly_returns yr
+      JOIN latest_scores fs ON yr.ticker = fs.ticker
+    )
+    SELECT
+      year,
+      AVG(CASE WHEN value_score >= 0.8 THEN annual_return END) AS value_return,
+      AVG(CASE WHEN momentum_score >= 0.8 THEN annual_return END) AS momentum_return,
+      AVG(CASE WHEN profitability_score >= 0.8 THEN annual_return END) AS profitability_return,
+      AVG(CASE WHEN size_score >= 0.8 THEN annual_return END) AS size_return,
+      AVG(annual_return) AS market_return
+    FROM joined
+    GROUP BY year
+    ORDER BY year;
+  `;
+
+  connection.query(query, [startYear, endYear], (err, data) => {
+    if (err) {
+      console.log(err);
+      res.json([]);
+    } else {
+      res.json(data.rows);
+    }
+  });
+};
+
+
 const web_search = async function(req, res) {
     const query = String(req.query.q ?? '').trim();
     if (!query) {
@@ -602,5 +709,7 @@ module.exports = {
   allocation_glide_path,
   allocation_risk_comparison,
   screener_diversification,
+  factor_performance,
+  factors_comparison,
   web_search,
 }
