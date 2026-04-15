@@ -80,6 +80,7 @@ function Portfolio() {
   const [webLoading, setWebLoading] = useState(false);
   const [webError, setWebError] = useState("");
   const [webPopupOpen, setWebPopupOpen] = useState(false);
+  const [sectorNameByCode, setSectorNameByCode] = useState({});
 
   const loadAllocationFromStorage = () => {
     try {
@@ -388,6 +389,28 @@ function Portfolio() {
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const fetchSectorLookup = async () => {
+      try {
+        const response = await fetch(`${API_BASE}/sectors`);
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!Array.isArray(data)) return;
+
+        const map = Object.fromEntries(
+          data
+            .filter((row) => row?.gsector !== undefined && row?.sector_name)
+            .map((row) => [String(row.gsector), row.sector_name])
+        );
+        setSectorNameByCode(map);
+      } catch {
+        // Leave sector codes as-is if lookup fails.
+      }
+    };
+
+    fetchSectorLookup();
   }, []);
 
   useEffect(() => {
@@ -945,7 +968,7 @@ function Portfolio() {
                   {row.company_name}
                 </button>
               </td>
-              <td>{row.sector}</td>
+              <td>{sectorNameByCode[String(row.sector)] || row.sector}</td>
               <td>{row.composite_score.toFixed(4)}</td>
               <td>{row.stock_side_weight_pct.toFixed(1)}</td>
               <td>{row.final_weight_pct.toFixed(1)}</td>
