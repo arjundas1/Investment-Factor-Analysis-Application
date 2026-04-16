@@ -72,6 +72,37 @@ Navigate to:
 
 `http://localhost:5173`
 
+## Dependencies
+
+### Frontend (root package.json)
+
+Runtime dependencies:
+
+- react (^19.2.4)
+- react-dom (^19.2.4)
+- react-router-dom (^6.30.3)
+- recharts (^3.7.0)
+
+Development dependencies:
+
+- @eslint/js (^9.39.1)
+- @types/react (^19.2.7)
+- @types/react-dom (^19.2.3)
+- @vitejs/plugin-react (^5.1.1)
+- eslint (^9.39.1)
+- eslint-plugin-react-hooks (^7.0.1)
+- eslint-plugin-react-refresh (^0.4.24)
+- globals (^16.5.0)
+- vite (^7.3.1)
+
+### Backend (server/package.json)
+
+Runtime dependencies:
+
+- cors (^2.8.6)
+- express (^5.2.1)
+- pg (^8.20.0)
+
 ## Project Team
 Professor: Dr. Susan Davidson, School of Engineering and Applied Sciences, University of Pennsylvania.
 
