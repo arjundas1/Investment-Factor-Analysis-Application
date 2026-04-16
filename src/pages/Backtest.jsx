@@ -11,8 +11,8 @@ import {
 } from "recharts";
 
 function Backtest() {
-  // ✅ Initialize weights directly (NO useEffect needed)
-  const [weights, setWeights] = useState(() => {
+  // ✅ Read weights ONCE from sessionStorage (static)
+  const [weights] = useState(() => {
     const saved = sessionStorage.getItem("cis5500_factors");
 
     if (saved) {
@@ -35,82 +35,57 @@ function Backtest() {
 
   const [data, setData] = useState([]);
 
-  // Fetch backtest data
+  // ✅ Fetch data once using fixed weights
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      fetch(
-        `http://localhost:8080/factors/performance?` +
-          `value=${weights.value}&` +
-          `momentum=${weights.momentum}&` +
-          `profitability=${weights.profitability}&` +
-          `size=${weights.size}`
-      )
-        .then((res) => res.json())
-        .then((resJson) => {
-          let factorCum = 1;
-          let marketCum = 1;
+    fetch(
+      `http://localhost:8080/factors/performance?` +
+        `value=${weights.value}&` +
+        `momentum=${weights.momentum}&` +
+        `profitability=${weights.profitability}&` +
+        `size=${weights.size}`
+    )
+      .then((res) => res.json())
+      .then((resJson) => {
+        let factorCum = 1;
+        let marketCum = 1;
 
-          const formatted = resJson.map((d) => {
-            factorCum *= 1 + Number(d.factor_return);
-            marketCum *= 1 + Number(d.market_return);
+        const formatted = resJson.map((d) => {
+          factorCum *= 1 + Number(d.factor_return);
+          marketCum *= 1 + Number(d.market_return);
 
-            return {
-              year: d.year,
-              factor: (factorCum - 1) * 100,
-              market: (marketCum - 1) * 100,
-            };
-          });
+          return {
+            year: d.year,
+            factor: (factorCum - 1) * 100,
+            market: (marketCum - 1) * 100,
+          };
+        });
 
-          setData(formatted);
-        })
-        .catch(() => setData([]));
-    }, 400); // debounce
-
-    return () => clearTimeout(timeout);
+        setData(formatted);
+      })
+      .catch(() => setData([]));
   }, [weights]);
 
   return (
     <div style={{ width: "100%", height: 450 }}>
       <h2>Factor Backtest</h2>
+
       <p>
-      This backtest simulates a portfolio constructed using top-ranked stocks based on composite factor scores.
-      Each year, top-ranked stocks are selected and returns are compounded.
+        This backtest simulates a portfolio constructed using top-ranked stocks
+        based on composite factor scores. Returns are compounded annually.
       </p>
+
       <p>Market = equal-weight average of all stocks</p>
+
+      {/* ✅ STATIC WEIGHTS DISPLAY */}
       <div style={{ marginBottom: 20 }}>
-  <h4>Adjust Factor Weights</h4>
-
-  {["value", "momentum", "profitability", "size"].map((factor) => (
-    <div key={factor}>
-      <label>
-        {factor}: {(weights[factor] * 100).toFixed(0)}%
-      </label>
-      <input
-        type="range"
-        min="0"
-        max="1"
-        step="0.05"
-        value={weights[factor]}
-        onChange={(e) => {
-          const newWeights = {
-            ...weights,
-            [factor]: parseFloat(e.target.value),
-          };
-
-          setWeights(newWeights);
-
-          sessionStorage.setItem(
-            "cis5500_factors",
-            JSON.stringify({
-              normalized_weights: newWeights,
-            })
-          );
-        }}
-        style={{ width: "300px", marginLeft: "10px" }}
-      />
-    </div>
-  ))}
-</div>
+        <h4>Factor Weights Used</h4>
+        <p>
+          Value: {(weights.value * 100).toFixed(1)}% |{" "}
+          Momentum: {(weights.momentum * 100).toFixed(1)}% |{" "}
+          Profitability: {(weights.profitability * 100).toFixed(1)}% |{" "}
+          Size: {(weights.size * 100).toFixed(1)}%
+        </p>
+      </div>
 
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data}>
