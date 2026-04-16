@@ -107,10 +107,6 @@ const asset_allocation = async function(req, res) {
     );
 }
 
-// ---------- Shared CTE used by screener and allocation routes ----------
-// Optimized: LATERAL joins force per-ticker index lookups on stock_prices_pkey
-// instead of sequential-scanning 7.7M rows. Brings CTE from ~20s to <1s.
-// Mirrors the company_factor_base VIEW (see Queries/create_shared_view.sql).
 const COMPANY_FACTOR_BASE_CTE = `
   latest_fs AS (
       SELECT fs.*
@@ -199,9 +195,6 @@ const screener_ranked = async function(req, res) {
     const safeWS = Number.isFinite(weightSize)          ? weightSize          : 0.25;
 
     connection.query(
-        // COMPANY_FACTOR_BASE_CTE expands to the four CTEs: latest_fs, latest_price,
-        // price_12m_ago, and base. "base" has all raw factor values ready to use.
-        // We then add "ranked" on top to apply PERCENT_RANK normalization.
         `WITH ${COMPANY_FACTOR_BASE_CTE},
         ranked AS (
             SELECT

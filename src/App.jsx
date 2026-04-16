@@ -12,7 +12,7 @@ function App() {
       <Navbar />
       <div style={{ padding: "40px" }}>
         <Routes>
-          <Route path="/" element={<Factors />} />
+          <Route path="/" element={<Allocation />} />
 
           <Route path="/allocation" element={<Allocation />} />
           <Route path="/factors" element={<Factors />} />
