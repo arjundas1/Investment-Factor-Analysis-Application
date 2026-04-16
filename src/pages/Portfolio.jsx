@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Cell,
   Legend,
@@ -52,7 +53,7 @@ function Portfolio() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [portfolioSettingsLoaded, setPortfolioSettingsLoaded] = useState(false);
-
+  const navigate = useNavigate();
   const [marketCapCategory, setMarketCapCategory] = useState("Large");
   const [weightValue, setWeightValue] = useState(0.25);
   const [weightProfitability, setWeightProfitability] = useState(0.25);
@@ -851,7 +852,14 @@ function Portfolio() {
           </div>
         </div>
       )}
-
+      {weightedStocks.length > 0 && (
+        <button
+          onClick={() => navigate("/backtest")}
+          style={{ margin: "20px 0", padding: "10px 20px" }}
+        >
+          Backtest this portfolio
+        </button>
+      )}
       <div style={{ width: "100%", height: 460, marginBottom: 24 }}>
         <ResponsiveContainer>
           <PieChart>
