@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 
 const API_BASE = "http://localhost:8080";
 const FACTORS_STORAGE_KEY = "cis5500_factors";
@@ -17,6 +18,7 @@ function Screener() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [sectorNameByCode, setSectorNameByCode] = useState({});
+  const navigate = useNavigate();
 
   useEffect(() => {
 
@@ -171,7 +173,14 @@ function Screener() {
       {results.length === 0 && !loading && (
         <p>Click "Run Screener" to fetch ranked stocks.</p>
       )}
-
+      {results.length > 0 && (
+        <button
+          onClick={() => navigate("/backtest")}
+          style={{ marginBottom: "15px", padding: "8px 16px" }}
+        >
+          Backtest this strategy
+        </button>
+      )}
       {results.length > 0 && (
         <table border="1" cellPadding="8" style={{ borderCollapse: "collapse", width: "100%" }}>
           <thead>

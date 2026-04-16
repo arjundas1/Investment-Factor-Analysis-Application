@@ -515,15 +515,12 @@ const screener_diversification = async function(req, res) {
 }
 
 const factor_performance = async function (req, res) {
-  const factor = req.query.factor; // value, momentum, profitability, size
+  const weightValue = parseFloat(req.query.value) || 0.25;
+  const weightMomentum = parseFloat(req.query.momentum) || 0.25;
+  const weightProfitability = parseFloat(req.query.profitability) || 0.25;
+  const weightSize = parseFloat(req.query.size) || 0.25;
   const startYear = parseInt(req.query.start_year) || 2015;
   const endYear = parseInt(req.query.end_year) || 2023;
-
-  if (!["value", "momentum", "profitability", "size"].includes(factor)) {
-    return res.status(400).json({ error: "Invalid factor" });
-  }
-
-  const factorColumn = `${factor}_score`;
 
   const query = `
     WITH yearly_returns AS (
@@ -535,6 +532,50 @@ const factor_performance = async function (req, res) {
   WHERE adjusted_close IS NOT NULL
   GROUP BY ticker, year
 ),
+
+${COMPANY_FACTOR_BASE_CTE},
+
+ranked AS (
+  SELECT
+    b.ticker,
+    yr.year,
+    yr.annual_return,
+
+    PERCENT_RANK() OVER (ORDER BY b.value_raw ASC) AS value_score,
+    PERCENT_RANK() OVER (ORDER BY b.momentum_raw ASC) AS momentum_score,
+    PERCENT_RANK() OVER (ORDER BY b.profitability_raw ASC) AS profitability_score,
+    PERCENT_RANK() OVER (ORDER BY b.size_raw DESC) AS size_score
+
+  FROM base b
+  JOIN yearly_returns yr ON b.ticker = yr.ticker
+),
+
+scored AS (
+  SELECT *,
+    (
+      value_score * ${weightValue} +
+      momentum_score * ${weightMomentum} +
+      profitability_score * ${weightProfitability} +
+      size_score * ${weightSize}
+    ) AS composite_score
+  FROM ranked
+),
+
+top_stocks AS (
+  SELECT *,
+    ROW_NUMBER() OVER (PARTITION BY year ORDER BY composite_score DESC) AS rank
+  FROM scored
+),
+
+portfolio_returns AS (
+  SELECT
+    year,
+    AVG(annual_return) AS factor_return
+  FROM top_stocks
+  WHERE rank <= 20
+  GROUP BY year
+),
+
 market_returns AS (
   SELECT
     year,
@@ -542,13 +583,14 @@ market_returns AS (
   FROM yearly_returns
   GROUP BY year
 )
+
 SELECT
-  year,
-  ROUND(AVG(annual_return)::numeric, 4) AS factor_return,
-  ROUND(AVG(annual_return)::numeric, 4) AS market_return
-FROM yearly_returns
-GROUP BY year
-ORDER BY year;
+  p.year,
+  p.factor_return,
+  m.market_return
+FROM portfolio_returns p
+JOIN market_returns m ON p.year = m.year
+ORDER BY p.year;
   `;
 
   connection.query(query, (err, data) => {
@@ -559,7 +601,6 @@ ORDER BY year;
       res.json(data.rows);
     }
   });
-//   console.log("FACTOR PERFORMANCE ROUTE HIT");
 };
 
 const factors_comparison = async function (req, res) {
@@ -605,14 +646,78 @@ const factors_comparison = async function (req, res) {
     ORDER BY year;
   `;
 
-  connection.query(query, [startYear, endYear], (err, data) => {
+  connection.query(
+  `
+  WITH yearly_returns AS (
+    SELECT
+      ticker,
+      EXTRACT(YEAR FROM price_date) AS year,
+      (MAX(adjusted_close) / MIN(adjusted_close) - 1) AS annual_return
+    FROM stock_prices
+    WHERE adjusted_close IS NOT NULL
+    GROUP BY ticker, year
+  ),
+
+  ${COMPANY_FACTOR_BASE_CTE},
+
+  ranked AS (
+    SELECT
+      b.ticker,
+      yr.year,
+      yr.annual_return,
+      PERCENT_RANK() OVER (ORDER BY b.value_raw ASC) AS value_score,
+      PERCENT_RANK() OVER (ORDER BY b.momentum_raw ASC) AS momentum_score,
+      PERCENT_RANK() OVER (ORDER BY b.profitability_raw ASC) AS profitability_score,
+      PERCENT_RANK() OVER (ORDER BY b.size_raw DESC) AS size_score
+    FROM base b
+    JOIN yearly_returns yr ON b.ticker = yr.ticker
+  ),
+
+  scored AS (
+    SELECT *,
+      (
+        value_score * $1 +
+        momentum_score * $2 +
+        profitability_score * $3 +
+        size_score * $4
+      ) AS composite_score
+    FROM ranked
+  ),
+
+  top_stocks AS (
+    SELECT *,
+      ROW_NUMBER() OVER (PARTITION BY year ORDER BY composite_score DESC) AS rank
+    FROM scored
+  ),
+
+  portfolio_returns AS (
+    SELECT year, AVG(annual_return) AS factor_return
+    FROM top_stocks
+    WHERE rank <= 20
+    GROUP BY year
+  ),
+
+  market_returns AS (
+    SELECT year, AVG(annual_return) AS market_return
+    FROM yearly_returns
+    GROUP BY year
+  )
+
+  SELECT p.year, p.factor_return, m.market_return
+  FROM portfolio_returns p
+  JOIN market_returns m ON p.year = m.year
+  ORDER BY p.year;
+  `,
+  [weightValue, weightMomentum, weightProfitability, weightSize],
+  (err, data) => {
     if (err) {
       console.log(err);
       res.json([]);
     } else {
       res.json(data.rows);
     }
-  });
+  }
+);
 };
 
 
